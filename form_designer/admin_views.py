@@ -1,15 +1,17 @@
 # encoding=utf-8
 from django.http import HttpResponse
-from form_designer.models import FormLog
-from form_designer.admin import FormLogAdmin
 from form_designer import app_settings
 from django.utils.translation import ugettext as _
 from form_designer.templatetags.friendly import friendly
 from django.conf import settings
 import csv
 
-# Returns a QuerySet with the same ordering and filtering like the one that would be visible in Django admin
+#------------------------------------------------------------------------------
 def get_change_list_query_set(model_admin, model, request):
+    """
+    Returns a QuerySet with the same ordering and filtering like the one that would be visible in Django admin
+    """
+    
     from django.contrib import admin
     from django.contrib.admin.views.main import ChangeList
     a = model_admin(model, admin.site)
@@ -17,7 +19,14 @@ def get_change_list_query_set(model_admin, model, request):
         a.date_hierarchy, a.search_fields, a.list_select_related, a.list_per_page, a.list_editable, a)
     return cl.get_query_set()
 
+
+#------------------------------------------------------------------------------
 def export_csv(request):
+    """
+    TODO: Re-code this. Executing this now will result in an error (No such
+    class "FormLogAdmin").
+    """
+    
     response = HttpResponse(mimetype='text/csv')
     response['Content-Disposition'] = 'attachment; filename='+app_settings.get('FORM_DESIGNER_CSV_EXPORT_FILENAME')
     writer = csv.writer(response, delimiter=app_settings.get('FORM_DESIGNER_CSV_EXPORT_DELIMITER'))

@@ -9,13 +9,20 @@ from django.http import HttpResponseRedirect
 from django.conf import settings
 from form_designer import app_settings
 
+
+#==============================================================================
 class DesignedForm(forms.Form):
+    
+    #--------------------------------------------------------------------------
     def __init__(self, form_definition, initial_data=None, *args, **kwargs):
         super(DesignedForm, self).__init__(*args, **kwargs)
-        for def_field in form_definition.formdefinitionfield_set.all():
+        for def_field in form_definition.fields.all():
             self.add_defined_field(def_field, initial_data)
         self.fields[form_definition.submit_flag_name] = forms.BooleanField(required=False, initial=1, widget=widgets.HiddenInput)
 
+
+
+    #--------------------------------------------------------------------------
     def add_defined_field(self, def_field, initial_data=None):
         if initial_data and initial_data.has_key(def_field.name):
             if not def_field.field_class in ('forms.MultipleChoiceField', 'forms.ModelMultipleChoiceField'):
@@ -24,6 +31,10 @@ class DesignedForm(forms.Form):
                 def_field.initial = initial_data.getlist(def_field.name)
         self.fields[def_field.name] = eval(def_field.field_class)(**def_field.get_form_field_init_args())
 
+
+
+
+#------------------------------------------------------------------------------
 def process_form(request, form_definition, context={}, is_cms_plugin=False):
     success_message = form_definition.success_message or _('Thank you, the data was submitted successfully.')
     error_message = form_definition.error_message or _('The data could not be submitted, please try again.')
@@ -73,6 +84,9 @@ def process_form(request, form_definition, context={}, is_cms_plugin=False):
 
     return context
 
+
+
+#------------------------------------------------------------------------------
 def detail(request, object_name):
     form_definition = get_object_or_404(FormDefinition, name=object_name)
     result = process_form(request, form_definition)

@@ -9,7 +9,13 @@ from pickled_object_field import PickledObjectField
 from model_name_field import ModelNameField
 from template_field import TemplateTextField, TemplateCharField
 
+
+#==============================================================================
 class FormDefinition(models.Model):
+    """
+    A model that defines a form and its components and properties.
+    """
+    
     name = models.SlugField(_('Name'), max_length=255, unique=True)
     title = models.CharField(_('Title'), max_length=255, blank=True, null=True)
     action = models.URLField(_('Target URL'), help_text=_('If you leave this empty, the page where the form resides will be requested, and you can use the mail form and logging features. You can also send data to external sites: For instance, enter "http://www.google.ch/search" to create a search form.'), max_length=255, blank=True, null=True)
@@ -27,16 +33,22 @@ class FormDefinition(models.Model):
     message_template = TemplateTextField(_('Message template'), help_text=_('Your form fields are available as template context. Example: "{{ message }}" if you have a field named `message`. To iterate over all fields, use the variable `data` (a list containing a dictionary for each form field, each containing the elements `name`, `label`, `value`).'), blank=True, null=True)
     form_template_name = models.CharField(_('Form template'), max_length=255, choices=app_settings.get('FORM_DESIGNER_FORM_TEMPLATES'), blank=True, null=True)
 
-    class Meta:
-        verbose_name = _('Form')
-        verbose_name_plural = _('Forms')
 
+    #--------------------------------------------------------------------------
+    class Meta:
+        verbose_name = _('form')
+        verbose_name_plural = _('forms')
+
+
+    #--------------------------------------------------------------------------
     def get_field_dict(self):
         dict = {}
-        for field in self.formdefinitionfield_set.all():
+        for field in self.fields.all():
             dict[field.name] = field
         return dict
         
+        
+    #--------------------------------------------------------------------------
     def get_form_data(self, form):
         data = []
         field_dict = self.get_field_dict()
@@ -50,12 +62,16 @@ class FormDefinition(models.Model):
                 data.append({'name': key, 'label': form.fields[key].label, 'value': value})
         return data
         
+        
+    #--------------------------------------------------------------------------
     def get_form_data_dict(self, form_data):
         dict = {}
         for field in form_data:
             dict[field['name']] = field['value']
         return dict
 
+
+    #--------------------------------------------------------------------------
     def compile_message(self, form_data, template=None):
         from django.template.loader import get_template
         from django.template import Context, Template
@@ -69,19 +85,39 @@ class FormDefinition(models.Model):
         context['data'] = form_data
         return t.render(context)
 
+
+    #--------------------------------------------------------------------------
     def count_fields(self):
-        return self.formdefinitionfield_set.count()
+        return self.fields.count()
     count_fields.short_description = _('Fields')
 
+
+    #--------------------------------------------------------------------------
     def __unicode__(self):
         return self.title or self.name
-
+        
+    
+    #--------------------------------------------------------------------------
     def log(self, form):
+        """
+        Saves the form submission.
+        """
+        
         form_data = self.get_form_data(form)
-        #if self.mail_to:
-        #    form_data.append({'name': 'mail', 'label': 'mail', 'value': self.compile_message(form_data)})
-        FormLog(form_definition=self, data=form_data).save()
+        field_dict = self.get_field_dict()
+        
+        # create a submission
+        submission = FormSubmission()
+        submission.save()
+        
+        # log each field's value individually
+        for field_data in form_data:
+            field_submission = FormFieldSubmission(submission=submission, definition_field=field_dict[field_data['name']],
+                value=field_data['value'])
+            field_submission.save()
 
+
+    #--------------------------------------------------------------------------
     def string_template_replace(self, text, context_dict):
         from django.template import Context, Template, TemplateSyntaxError
         try:
@@ -90,6 +126,8 @@ class FormDefinition(models.Model):
         except TemplateSyntaxError:
             return text
 
+
+    #--------------------------------------------------------------------------
     def send_mail(self, form):
         form_data = self.get_form_data(form)
         message = self.compile_message(form_data)
@@ -115,26 +153,75 @@ class FormDefinition(models.Model):
         from django.core.mail import send_mail
         send_mail(mail_subject, message, mail_from or None, mail_to, fail_silently=False)
 
+
+    #--------------------------------------------------------------------------
     @property
     def submit_flag_name(self):
         name = app_settings.get('FORM_DESIGNER_SUBMIT_FLAG_NAME') % self.name
-        while self.formdefinitionfield_set.filter(name__exact=name).count() > 0:
+        while self.fields.filter(name__exact=name).count() > 0:
             name += '_'
         return name
+        
+        
+    
+    #--------------------------------------------------------------------------
+    def to_field_list(self):
+        """
+        Converts this form definition into a list of dictionaries, each
+        dictionary representing a field and its components.
+        
+        @param fields A list of fields to include. By default, if this is
+            None, all fields will be generated.
+        @param field_name_replacements
+        """
+        
+        field_arr = []
+        
+        # run through all of the fields associated with this definition
+        for field in self.fields.all():
+            choices = []
+            if field.choices.count():
+                choices = [{'value': u'%s' % choice.value, 'label': u'%s' % choice.label} for choice in field.choices.all()]
+            elif field.choice_model:
+                choices = [{'value': u'%s' % obj.id, 'label': u'%s' % obj} for obj in ModelNameField.get_model_from_string(field.choice_model).objects.all()]
+            
+            field_item = {
+                'name': u'%s' % field.name,
+                'label': u'%s' % field.label,
+                'class': u'%s' % field.field_class,
+                'position': u'%s' % field.position,
+                'widget': u'%s' % field.widget,
+                'initial': u'%s' % field.initial,
+                'help_text': u'%s' % field.help_text,
+            }
+            if choices:
+                field_item['choices'] = choices
 
-class FormLog(models.Model):
-    created = models.DateTimeField(_('Created'), auto_now=True)
-    form_definition = models.ForeignKey(FormDefinition, verbose_name=_('Form'))
-    data = PickledObjectField(_('Data'), null=True, blank=True)
 
-    class Meta:
-        verbose_name = _('Form log')
-        verbose_name_plural = _('Form logs')
-        ordering = ['-created']
 
+#==============================================================================
+class FormDefinitionFieldChoice(models.Model):
+    """
+    A single choice available for a form definition field.
+    """
+    
+    label = models.TextField(_('Label'), help_text=_('A descriptive value for the choice'), blank=True, null=True)
+    value = models.TextField(_('Value'), help_text=_('The value of the choice when submitting the form'), blank=True, null=True)
+    
+    
+    #--------------------------------------------------------------------------
+    def __unicode__(self):
+        return u'%s (%s)' % (self.label, self.value)
+
+
+
+#==============================================================================
 class FormDefinitionField(models.Model):
+    """
+    A single field within a form definition.
+    """
 
-    form_definition = models.ForeignKey(FormDefinition)
+    form_definition = models.ForeignKey(FormDefinition, verbose_name=_('Form definition'), related_name='fields')
     field_class = models.CharField(_('Field class'), choices=app_settings.get('FORM_DESIGNER_FIELD_CLASSES'), max_length=32)
     position = models.IntegerField(_('Position'), blank=True, null=True)
 
@@ -145,9 +232,9 @@ class FormDefinitionField(models.Model):
     widget = models.CharField(_('Widget'), default='', choices=app_settings.get('FORM_DESIGNER_WIDGET_CLASSES'), max_length=255, blank=True, null=True)
     initial = models.TextField(_('Initial value'), blank=True, null=True)
     help_text = models.CharField(_('Help text'), max_length=255, blank=True, null=True)
-
-    choice_values = models.TextField(_('Values'), help_text=_('One value per line'), blank=True, null=True)
-    choice_labels = models.TextField(_('Labels'), help_text=_('One label per line'), blank=True, null=True)
+    
+    # the new model
+    choices = models.ManyToManyField(FormDefinitionFieldChoice, verbose_name=_('Choices'), help_text=_('The various options from which the user can choose'), blank=True, null=True)
 
     max_length = models.IntegerField(_('Max. length'), blank=True, null=True)
     min_length = models.IntegerField(_('Min. length'), blank=True, null=True)
@@ -159,18 +246,18 @@ class FormDefinitionField(models.Model):
     regex = models.CharField(_('Regular Expression'), max_length=255, blank=True, null=True)
 
     choice_model_choices = app_settings.get('FORM_DESIGNER_CHOICE_MODEL_CHOICES')
-    choice_model = ModelNameField(_('Data model'), max_length=255, blank=True, null=True, choices=choice_model_choices, help_text=('your_app.models.ModelName' if not choice_model_choices else None))
+    choice_model = ModelNameField(_('Data model'), max_length=255, blank=True, null=True, choices=choice_model_choices, help_text=_('your_app.models.ModelName' if not choice_model_choices else None))
     choice_model_empty_label = models.CharField(_('Empty label'), max_length=255, blank=True, null=True)
 
-    class Meta:
-        verbose_name = _('Field')
-        verbose_name_plural = _('Fields')
-
+    
+    #--------------------------------------------------------------------------
     def save(self):
         if self.position == None:
             self.position = 0
         super(FormDefinitionField, self).save()
 
+
+    #--------------------------------------------------------------------------
     def ____init__(self, field_class=None, name=None, required=None, widget=None, label=None, initial=None, help_text=None, *args, **kwargs):
         super(FormDefinitionField, self).__init__(*args, **kwargs)
         self.name = name
@@ -181,6 +268,8 @@ class FormDefinitionField(models.Model):
         self.initial = initial
         self.help_text = help_text
 
+
+    #--------------------------------------------------------------------------
     def get_form_field_init_args(self):
         args = {
             'required': self.required,
@@ -216,20 +305,15 @@ class FormDefinitionField(models.Model):
                 })
 
         if self.field_class in ('forms.ChoiceField', 'forms.MultipleChoiceField'):
-            if self.choice_values:
-                choices = []
-                regex = re.compile('[\s]*\n[\s]*')
-                values = regex.split(self.choice_values)
-                labels = regex.split(self.choice_labels) if self.choice_labels else []
-                for index, value in enumerate(values):
-                    try:
-                        label = labels[index]
-                    except:
-                        label = value
-                    choices.append((value, label))
+            print "Choices count:", self.choices.count()
+            if self.choices.count():
+                # new method of creating choices
+                choices = [(choice.value, choice.label) for choice in self.choices.all()]
                 args.update({
                     'choices': tuple(choices)
                 })
+                
+                print "Choices:", choices
 
         if self.field_class in ('forms.ModelChoiceField', 'forms.ModelMultipleChoiceField'):
             args.update({
@@ -248,14 +332,95 @@ class FormDefinitionField(models.Model):
         
         return args
 
+
+    #--------------------------------------------------------------------------
     class Meta:
-        verbose_name = _('Field')
-        verbose_name_plural = _('Fields')
+        verbose_name = _('field')
+        verbose_name_plural = _('fields')
         ordering = ['position']
 
+    #--------------------------------------------------------------------------
     def __unicode__(self):
         return self.label if self.label else self.name
 
+
+
+#==============================================================================
+class FormSubmission(models.Model):
+    """
+    Represents a single submission of a particular type of form definition.
+    """
+    
+    created = models.DateTimeField(_('Created'), auto_now=True)
+    
+    #--------------------------------------------------------------------------
+    class Meta:
+        verbose_name = _('form submission')
+        verbose_name_plural = _('form submissions')
+        ordering = ['-created']
+        
+    
+    #--------------------------------------------------------------------------
+    def __unicode__(self):
+        form_definition = self.form_definition
+        # if this submission has fields attached to it
+        if form_definition:
+            return u'%s at %s' % (form_definition, self.created)
+        else:
+            return u'Empty submission at %s' % self.created
+        
+        
+    
+    #--------------------------------------------------------------------------
+    @property
+    def form_definition(self):
+        return self.fields.all()[0].definition_field.form_definition if self.fields.count() else None
+
+
+
+#==============================================================================
+class FormFieldSubmission(models.Model):
+    """
+    Represents the content of a single submission's field.
+    """
+    
+    submission = models.ForeignKey(FormSubmission, verbose_name=_('Form submission'), help_text=_('The submission to which this particular submission component belongs'),
+        related_name='fields')
+    definition_field = models.ForeignKey(FormDefinitionField, verbose_name=_('Form definition field'),
+        help_text=_('The field in the form definition to which this submitted value belongs'),
+        related_name='submissions')
+    value = models.TextField(_('Value'), help_text=_('The actual submitted value'))
+    
+    
+    #--------------------------------------------------------------------------
+    def __unicode__(self):
+        value = u'%s' % self.value
+        truncated_value = value if len(value) < 10 else value[:10]+'...'
+        return u'%s: %s (%s)' % (self.definition_field, u'%s=%s' % (truncated_value, self.choice_label) if self.choice_label else truncated_value, self.submission)
+        
+    
+    #--------------------------------------------------------------------------
+    @property
+    def choice_label(self):
+        """
+        Retrieves the label of the choice made by the user, should this
+        submission's field be linked to a set of choices.
+        
+        TODO: Account for model choice fields.
+        """
+        
+        try:
+            # get the first choice that matches the available ones
+            choice = self.definition_field.choices.filter(value=self.value)[0]
+        except:
+            return None
+        
+        return u'%s' % choice.label
+
+
+
+
+#==============================================================================
 if 'cms' in settings.INSTALLED_APPS:
     from cms.models import CMSPlugin
 
