@@ -251,7 +251,7 @@ class FormDefinitionField(models.Model):
 
     
     #--------------------------------------------------------------------------
-    def save(self):
+    def save(self, *args, **kwargs):
         if self.position == None:
             self.position = 0
         super(FormDefinitionField, self).save()
