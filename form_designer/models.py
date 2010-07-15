@@ -115,6 +115,8 @@ class FormDefinition(models.Model):
             field_submission = FormFieldSubmission(submission=submission, definition_field=field_dict[field_data['name']],
                 value=field_data['value'])
             field_submission.save()
+        
+        return submission
 
 
     #--------------------------------------------------------------------------
@@ -305,7 +307,7 @@ class FormDefinitionField(models.Model):
                 })
 
         if self.field_class in ('forms.ChoiceField', 'forms.MultipleChoiceField'):
-            print "Choices count:", self.choices.count()
+            #print "Choices count:", self.choices.count()
             if self.choices.count():
                 # new method of creating choices
                 choices = [(choice.value, choice.label) for choice in self.choices.all()]
@@ -313,7 +315,7 @@ class FormDefinitionField(models.Model):
                     'choices': tuple(choices)
                 })
                 
-                print "Choices:", choices
+                #print "Choices:", choices
 
         if self.field_class in ('forms.ModelChoiceField', 'forms.ModelMultipleChoiceField'):
             args.update({
