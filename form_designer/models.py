@@ -218,6 +218,14 @@ class FormDefinitionFieldChoice(models.Model):
 
 
 #==============================================================================
+class FieldChoiceContainer(object):
+    def __init__(self, value='', label=''):
+        self.value = value
+        self.label = label
+
+
+
+#==============================================================================
 class FormDefinitionField(models.Model):
     """
     A single field within a form definition.
@@ -269,6 +277,23 @@ class FormDefinitionField(models.Model):
         self.label = label
         self.initial = initial
         self.help_text = help_text
+        
+    
+    #--------------------------------------------------------------------------
+    def get_choices(self, filter=None, order_by=None):
+        queryset = None
+        if self.field_class in ('forms.ModelChoiceField', 'forms.ModelMultipleChoiceField'):
+            if filter:
+                exec('queryset = ModelNameField.get_model_from_string(self.choice_model).objects.%s' % filter)
+            else:
+                queryset = ModelNameField.get_model_from_string(self.choice_model).objects.all()
+            
+            if order_by:
+                queryset = queryset.order_by(order_by)
+            
+            return [FieldChoiceContainer(value=item.id, label=item.title) for item in queryset]
+        else:
+            return self.choices.order_by('value')
 
 
     #--------------------------------------------------------------------------
