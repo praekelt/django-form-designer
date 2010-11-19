@@ -9,7 +9,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='django-form-designer',
-    version='0.1',
+    version='0.1.praekelt',
     description='Construct Django forms through the Django admin.',
     author='Praekelt Digital',
     author_email='dev@praekelt.com',
