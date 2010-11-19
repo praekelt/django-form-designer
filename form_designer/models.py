@@ -5,9 +5,9 @@ from django.core.mail import send_mail
 from django.conf import settings
 from form_designer import app_settings
 import re
-from pickled_object_field import PickledObjectField
-from model_name_field import ModelNameField
-from template_field import TemplateTextField, TemplateCharField
+from form_designer.pickled_object_field import PickledObjectField
+from form_designer.model_name_field import ModelNameField
+from form_designer.template_field import TemplateTextField, TemplateCharField
 
 
 #==============================================================================
@@ -115,6 +115,8 @@ class FormDefinition(models.Model):
             field_submission = FormFieldSubmission(submission=submission, definition_field=field_dict[field_data['name']],
                 value=field_data['value'])
             field_submission.save()
+        
+        return submission
 
 
     #--------------------------------------------------------------------------
@@ -216,6 +218,14 @@ class FormDefinitionFieldChoice(models.Model):
 
 
 #==============================================================================
+class FieldChoiceContainer(object):
+    def __init__(self, value='', label=''):
+        self.value = value
+        self.label = label
+
+
+
+#==============================================================================
 class FormDefinitionField(models.Model):
     """
     A single field within a form definition.
@@ -251,7 +261,7 @@ class FormDefinitionField(models.Model):
 
     
     #--------------------------------------------------------------------------
-    def save(self):
+    def save(self, *args, **kwargs):
         if self.position == None:
             self.position = 0
         super(FormDefinitionField, self).save()
@@ -267,6 +277,23 @@ class FormDefinitionField(models.Model):
         self.label = label
         self.initial = initial
         self.help_text = help_text
+        
+    
+    #--------------------------------------------------------------------------
+    def get_choices(self, filter=None, order_by=None):
+        queryset = None
+        if self.field_class in ('forms.ModelChoiceField', 'forms.ModelMultipleChoiceField'):
+            if filter:
+                exec('queryset = ModelNameField.get_model_from_string(self.choice_model).objects.%s' % filter)
+            else:
+                queryset = ModelNameField.get_model_from_string(self.choice_model).objects.all()
+            
+            if order_by:
+                queryset = queryset.order_by(order_by)
+            
+            return [FieldChoiceContainer(value=item.id, label=item.title) for item in queryset]
+        else:
+            return self.choices.order_by('value')
 
 
     #--------------------------------------------------------------------------
@@ -305,7 +332,7 @@ class FormDefinitionField(models.Model):
                 })
 
         if self.field_class in ('forms.ChoiceField', 'forms.MultipleChoiceField'):
-            print "Choices count:", self.choices.count()
+            #print "Choices count:", self.choices.count()
             if self.choices.count():
                 # new method of creating choices
                 choices = [(choice.value, choice.label) for choice in self.choices.all()]
@@ -313,7 +340,7 @@ class FormDefinitionField(models.Model):
                     'choices': tuple(choices)
                 })
                 
-                print "Choices:", choices
+                #print "Choices:", choices
 
         if self.field_class in ('forms.ModelChoiceField', 'forms.ModelMultipleChoiceField'):
             args.update({
